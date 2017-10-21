@@ -1,7 +1,7 @@
 #include <Servo.h>
 #include <SoftwareSerial.h>
+#include "Kalman.h"
 #include "MPU9250.h"
-#include "quaternionFilters.h"
 #define ArraySize(x) (sizeof(x) / sizeof(x[0]))
 //String toStr(int i) {return String(i);}
 //////////////////////////////////////////////////////////////////////////////////
@@ -12,72 +12,113 @@ const int maxPulseRate        = 2000;
 const int numSensorDataSize = 10;
 const long BT_RATE = 115200;
 const int  CMD_LEN = 10;
-const float balance_acc[3]={0.03,0.03,0.03};  //ax,ay,az
-const float balance_gyro[3]={3,3,3};          //gx,gy,gz
 //////////////////////////////////////////////////////////////////////////////////
 SoftwareSerial BLE_Serial(2, 3); // BLE's RX, BLE's TXD
 MPU9250 myIMU;
 Servo escs[4];
 int avg_speed,new_speed,tmp_speed,tmp_speed_total,i;
-float sensorAccData[numSensorDataSize][3];    // the readings from the analog input
-float sensorGyroData[numSensorDataSize][3];    // the readings from the analog input
-int sensorDataIndex = 0;              // the index of the current reading
-int sensorAccTotal[3];
-int sensorAccAverage[3];
-int sensorGyroTotal[3];
-int sensorGyroAverage[3];
+
+//////////////////////////////////////////////////////////////////////////////////
+#define RESTRICT_PITCH // Comment out to restrict roll to ±90deg instead - please read: http://www.freescale.com/files/sensors/doc/app_note/AN3461.pdf
+Kalman kalmanX; // Create the Kalman instances
+Kalman kalmanY;
+double gyroXangle, gyroYangle; // Angle calculate using the gyro only
+double compAngleX, compAngleY; // Calculated angle using a complementary filter
+double kalAngleX, kalAngleY; // Calculated angle using a Kalman filter
+uint32_t timer;
+double delta;
 //////////////////////////////////////////////////////////////////////////////////
 bool cmd_end=false;
 String cmd="";
-void clearBuffer(){
-  cmd="";
+//////////////////////////////////////////////////////////////////////////////////
+/*
+void initKalman(){
+  // Set kalman and gyro starting angle
+  while (i2cRead(0x3B, i2cData, 6));
+  accX = (int16_t)((i2cData[0] << 8) | i2cData[1]);
+  accY = (int16_t)((i2cData[2] << 8) | i2cData[3]);
+  accZ = (int16_t)((i2cData[4] << 8) | i2cData[5]);
+
+  // Source: http://www.freescale.com/files/sensors/doc/app_note/AN3461.pdf eq. 25 and eq. 26
+  // atan2 outputs the value of -π to π (radians) - see http://en.wikipedia.org/wiki/Atan2
+  // It is then converted from radians to degrees
+#ifdef RESTRICT_PITCH // Eq. 25 and 26
+  double roll  = atan2(accY, accZ) * RAD_TO_DEG;
+  double pitch = atan(-accX / sqrt(accY * accY + accZ * accZ)) * RAD_TO_DEG;
+#else // Eq. 28 and 29
+  double roll  = atan(accY / sqrt(accX * accX + accZ * accZ)) * RAD_TO_DEG;
+  double pitch = atan2(-accX, accZ) * RAD_TO_DEG;
+#endif
+  kalmanX.setAngle(roll); // Set starting angle
+  kalmanY.setAngle(pitch);
+  gyroXangle = roll;
+  gyroYangle = pitch;
+  compAngleX = roll;
+  compAngleY = pitch;
+  timer = micros();
 }
-void clearSensorData(){
-  for (i=0; i < numSensorDataSize; i++) {
-    sensorAccData[i][0] = 0;
-    sensorAccData[i][1] = 0;
-    sensorAccData[i][2] = 0;
-    sensorGyroData[i][0] = 0;
-    sensorGyroData[i][1] = 0;
-    sensorGyroData[i][2] = 0;
-  }
+*/
+void computeKalman(){
+  delta = (double)(micros() - timer) / 1000000; // Calculate delta time
+  timer = micros();
+  double gyroXrate = myIMU.gx / 131.0; // Convert to deg/s
+  double gyroYrate = myIMU.gy / 131.0; // Convert to deg/s
+
+#ifdef RESTRICT_PITCH
+  // This fixes the transition problem when the accelerometer angle jumps between -180 and 180 degrees
+  if ((myIMU.roll < -90 && kalAngleX > 90) || (myIMU.roll > 90 && kalAngleX < -90)) {
+    kalmanX.setAngle(myIMU.roll);
+    compAngleX = myIMU.roll;
+    kalAngleX  = myIMU.roll;
+    gyroXangle = myIMU.roll;
+  } else
+    kalAngleX = kalmanX.getAngle(myIMU.roll, gyroXrate, delta); // Calculate the angle using a Kalman filter
+
+  if (abs(kalAngleX) > 90)
+    gyroYrate = -gyroYrate; // Invert rate, so it fits the restriced accelerometer reading
+  kalAngleY = kalmanY.getAngle(myIMU.pitch, gyroYrate, delta);
+#else
+  // This fixes the transition problem when the accelerometer angle jumps between -180 and 180 degrees
+  if ((myIMU.pitch < -90 && kalAngleY > 90) || (myIMU.pitch > 90 && kalAngleY < -90)) {
+    kalmanY.setAngle(myIMU.pitch);
+    compAngleY = myIMU.pitch;
+    kalAngleY = myIMU.pitch;
+    gyroYangle = myIMU.pitch;
+  } else
+    kalAngleY = kalmanY.getAngle(myIMU.pitch, gyroYrate, delta); // Calculate the angle using a Kalman filter
+
+  if (abs(kalAngleY) > 90)
+    gyroXrate = -gyroXrate; // Invert rate, so it fits the restriced accelerometer reading
+  kalAngleX = kalmanX.getAngle(myIMU.roll, gyroXrate, delta); // Calculate the angle using a Kalman filter
+#endif
+
+  gyroXangle += gyroXrate * delta; // Calculate gyro angle without any filter
+  gyroYangle += gyroYrate * delta;
+  //gyroXangle += kalmanX.getRate() * delta; // Calculate gyro angle using the unbiased rate
+  //gyroYangle += kalmanY.getRate() * delta;
+
+  compAngleX = 0.93 * (compAngleX + gyroXrate * delta) + 0.07 * myIMU.roll; // Calculate the angle using a Complimentary filter
+  compAngleY = 0.93 * (compAngleY + gyroYrate * delta) + 0.07 * myIMU.pitch;
+
+  // Reset the gyro angle when it has drifted too much
+  if (gyroXangle < -180 || gyroXangle > 180)
+    gyroXangle = kalAngleX;
+  if (gyroYangle < -180 || gyroYangle > 180)
+    gyroYangle = kalAngleY;
+
 }
-void averageSensor(){
-  sensorAccTotal[0] -= sensorAccData[sensorDataIndex][0];
-  sensorAccData[sensorDataIndex][0] = myIMU.ax;
-  sensorAccTotal[0] += sensorAccData[sensorDataIndex][0];
-  sensorAccAverage[0] = sensorAccTotal[0] / numSensorDataSize;
-  
-  sensorAccTotal[1] -= sensorAccData[sensorDataIndex][1];
-  sensorAccData[sensorDataIndex][1] = myIMU.ay;
-  sensorAccTotal[1] += sensorAccData[sensorDataIndex][1];
-  sensorAccAverage[1] = sensorAccTotal[1] / numSensorDataSize;
-  
-  sensorAccTotal[2] -= sensorAccData[sensorDataIndex][2];
-  sensorAccData[sensorDataIndex][2] = myIMU.az;
-  sensorAccTotal[2] += sensorAccData[sensorDataIndex][2];
-  sensorAccAverage[2] = sensorAccTotal[2] / numSensorDataSize;
-  
-  sensorGyroTotal[0] -= sensorGyroData[sensorDataIndex][0];
-  sensorGyroData[sensorDataIndex][0] = myIMU.gx;
-  sensorGyroTotal[0] += sensorGyroData[sensorDataIndex][0];
-  sensorGyroAverage[0] = sensorGyroTotal[0] / numSensorDataSize;
-  
-  sensorGyroTotal[1] -= sensorGyroData[sensorDataIndex][1];
-  sensorGyroData[sensorDataIndex][1] = myIMU.gy;
-  sensorGyroTotal[1] += sensorGyroData[sensorDataIndex][1];
-  sensorGyroAverage[1] = sensorGyroTotal[1] / numSensorDataSize;
-  
-  sensorGyroTotal[2] -= sensorGyroData[sensorDataIndex][2];
-  sensorGyroData[sensorDataIndex][2] = myIMU.gz;
-  sensorGyroTotal[2] += sensorGyroData[sensorDataIndex][2];
-  sensorGyroAverage[2] = sensorGyroTotal[2] / numSensorDataSize;
-  
-  if (sensorDataIndex >= numSensorDataSize) {
-    sensorDataIndex=0;
-  }else{
-    sensorDataIndex++;
-  }
+void printKalman(){
+  Serial.print("roll="); Serial.print(myIMU.roll); Serial.print("\t");
+  Serial.print("  gx=");Serial.print(myIMU.gx); Serial.print("\t");
+  Serial.print("gxagl=");Serial.print(gyroXangle); Serial.print("\t");
+  Serial.print("caglx=");Serial.print(compAngleX); Serial.print("\t");
+  Serial.print("kaglx=");Serial.print(kalAngleX); Serial.print("\t");
+  Serial.print("pitch=");Serial.print(myIMU.pitch); Serial.print("\t");
+  Serial.print("  gy=");Serial.print(myIMU.gy); Serial.print("\t");
+  Serial.print("gyagl=");Serial.print(gyroYangle); Serial.print("\t");
+  Serial.print("cagly=");Serial.print(compAngleY); Serial.print("\t");
+  Serial.print("kagly=");Serial.print(kalAngleY); Serial.println("\t");
+
 }
 //////////////////////////////////////////////////////////////////////////////////
 void setup() {
@@ -86,13 +127,14 @@ void setup() {
   BLE_Serial.begin(BT_RATE);
   initEscs();
   initMPU9250();
-  clearSensorData();
   //writeTo4Escs(33);
 }
 void loop() {
   readCmd();
   getDataMPU9250();
-  averageSensor();
+  //averageSensor();
+  computeKalman();
+  //printKalman();
   autoBalance();
   //printMPU9250();
   delay(200);
@@ -115,7 +157,7 @@ void readCmd(){
     }
   }
   if(cmd_end){
-    clearBuffer();
+    cmd="";
     cmd_end=false;
   }
 }
@@ -180,6 +222,16 @@ void getDataMPU9250(){
         myIMU.mz = (float)myIMU.magCount[2] * myIMU.mRes * myIMU.factoryMagCalibration[2] - myIMU.magBias[2];
         // Must be called before updating quaternions!
         myIMU.updateTime();
+          // Source: http://www.freescale.com/files/sensors/doc/app_note/AN3461.pdf eq. 25 and eq. 26
+          // atan2 outputs the value of -π to π (radians) - see http://en.wikipedia.org/wiki/Atan2
+          // It is then converted from radians to degrees
+        #ifdef RESTRICT_PITCH // Eq. 25 and 26
+          myIMU.roll   = atan2(myIMU.ay, myIMU.az) * RAD_TO_DEG;
+          myIMU.pitch  = atan(-myIMU.ax / sqrt(myIMU.ay * myIMU.ay + myIMU.az * myIMU.az)) * RAD_TO_DEG;
+        #else // Eq. 28 and 29
+          myIMU.roll   = atan(myIMU.ay / sqrt(myIMU.ax * myIMU.ax + myIMU.az * myIMU.az)) * RAD_TO_DEG;
+          myIMU.pitch  = atan2(-myIMU.ax, myIMU.az) * RAD_TO_DEG;
+        #endif
         /*MahonyQuaternionUpdate(myIMU.ax, myIMU.ay, myIMU.az, myIMU.gx * DEG_TO_RAD,
                                myIMU.gy * DEG_TO_RAD, myIMU.gz * DEG_TO_RAD, myIMU.my,
                                myIMU.mx, myIMU.mz, myIMU.deltat);
@@ -203,14 +255,14 @@ void getDataMPU9250(){
   }
 }
 void autoBalance(){
-    Serial.print("myIMU.ax=");Serial.println(myIMU.ax);
-    Serial.print("avg_ax=");Serial.println(sensorAccAverage[0]);
-    Serial.print("myIMU.ay=");Serial.println(myIMU.ay);
-    Serial.print("avg_ay=");Serial.println(sensorAccAverage[1]);
-    Serial.print("myIMU.gx=");Serial.println(myIMU.gx);
-    Serial.print("avg_gx=");Serial.println(sensorGyroAverage[0]);
-    Serial.print("myIMU.gy=");Serial.println(myIMU.gy);
-    Serial.print("avg_gy=");Serial.println(sensorGyroAverage[1]);
+    /*Serial.print("myIMU.ax=");Serial.print(myIMU.ax);
+    Serial.print("    avg_ax=");Serial.println(sensorAccAverage[0]);
+    Serial.print("myIMU.ay=");Serial.print(myIMU.ay);
+    Serial.print("    avg_ay=");Serial.println(sensorAccAverage[1]);
+    Serial.print("myIMU.gx=");Serial.print(myIMU.gx);
+    Serial.print("    avg_gx=");Serial.println(sensorGyroAverage[0]);
+    Serial.print("myIMU.gy=");Serial.print(myIMU.gy);
+    Serial.print("    avg_gy=");Serial.println(sensorGyroAverage[1]);
     if(sensorAccAverage[0]>balance_acc[0] && sensorAccAverage[1]>balance_acc[1]  //){ //down_acc
        && sensorGyroAverage[0]>balance_gyro[0] && sensorGyroAverage[1]<-balance_gyro[1]) { //down_gyro
        changeASpeed(0,1);
@@ -246,7 +298,7 @@ void autoBalance(){
        && sensorGyroAverage[0]>balance_gyro[0] && sensorGyroAverage[1]>balance_gyro[1]) { //up_gyro
        changeASpeed(3,-1);
        Serial.println("dec esc 3 ");
-    }
+    }*/
 }
 void printMPU9250(){
   myIMU.dspDelt_t = millis() - myIMU.count;
@@ -263,12 +315,13 @@ void printMPU9250(){
     Serial.print(" my = "); Serial.print((int)myIMU.my);
     Serial.print(" mz = "); Serial.print((int)myIMU.mz);
     Serial.println(" mGauss");
-    Serial.print("q0 = ");  Serial.print(*getQ());
+    /*Serial.print("q0 = ");  Serial.print(*getQ());
     Serial.print(" qx = "); Serial.print(*(getQ() + 1));
     Serial.print(" qy = "); Serial.print(*(getQ() + 2));
     Serial.print(" qz = "); Serial.println(*(getQ() + 3));
     //Serial.print("Temperature is ");  Serial.print(myIMU.temperature, 1);
     //Serial.println(" degrees C");
+    */
     myIMU.count = millis();
   }
 }
