@@ -132,13 +132,11 @@ void setup() {
 void loop() {
   readCmd();
   getDataMPU9250();
-  //averageSensor();
+  //printMPU9250();
   computeKalman();
   //printKalman();
   autoBalance();
-  //printMPU9250();
   delay(200);
-  //Serial.println("noop");
 }
 void readCmd(){
   byte byte_count=BLE_Serial.available();
@@ -222,6 +220,7 @@ void getDataMPU9250(){
         myIMU.mz = (float)myIMU.magCount[2] * myIMU.mRes * myIMU.factoryMagCalibration[2] - myIMU.magBias[2];
         // Must be called before updating quaternions!
         myIMU.updateTime();
+        
           // Source: http://www.freescale.com/files/sensors/doc/app_note/AN3461.pdf eq. 25 and eq. 26
           // atan2 outputs the value of -π to π (radians) - see http://en.wikipedia.org/wiki/Atan2
           // It is then converted from radians to degrees
@@ -255,50 +254,22 @@ void getDataMPU9250(){
   }
 }
 void autoBalance(){
-    /*Serial.print("myIMU.ax=");Serial.print(myIMU.ax);
-    Serial.print("    avg_ax=");Serial.println(sensorAccAverage[0]);
-    Serial.print("myIMU.ay=");Serial.print(myIMU.ay);
-    Serial.print("    avg_ay=");Serial.println(sensorAccAverage[1]);
-    Serial.print("myIMU.gx=");Serial.print(myIMU.gx);
-    Serial.print("    avg_gx=");Serial.println(sensorGyroAverage[0]);
-    Serial.print("myIMU.gy=");Serial.print(myIMU.gy);
-    Serial.print("    avg_gy=");Serial.println(sensorGyroAverage[1]);
-    if(sensorAccAverage[0]>balance_acc[0] && sensorAccAverage[1]>balance_acc[1]  //){ //down_acc
-       && sensorGyroAverage[0]>balance_gyro[0] && sensorGyroAverage[1]<-balance_gyro[1]) { //down_gyro
+    Serial.print("myIMU.roll=");Serial.print(myIMU.roll);Serial.print('\t');
+    Serial.print("myIMU.pitch=");Serial.println(myIMU.pitch);
+    if(myIMU.roll>0.1 && myIMU.gx>0.1){
        changeASpeed(0,1);
        Serial.println("inc esc 0 ");
-    }else if(sensorAccAverage[0]<-balance_acc[0] && sensorAccAverage[1]<-balance_acc[1] //){ //up_acc
-       && sensorGyroAverage[0]<-balance_gyro[0] && sensorGyroAverage[1]>balance_gyro[1]) { //up_gyro
+    }else if(myIMU.roll>0.1 && myIMU.gx>0.1) {
        changeASpeed(0,-1);
        Serial.println("dec esc 0 ");
     }
-    if(sensorAccAverage[0]<-balance_acc[0] && sensorAccAverage[1]>balance_acc[1] //){ //down_acc
-       && sensorGyroAverage[0]>balance_gyro[0] && sensorGyroAverage[1]>balance_gyro[1]) { //down_gyro
-       changeASpeed(1,1);
-       Serial.println("inc esc 1 ");
-    }else if(sensorAccAverage[0]<-balance_acc[0] && sensorAccAverage[1]<-balance_acc[1] //){ //up_acc
-       && sensorGyroAverage[0]<-balance_gyro[0] && sensorGyroAverage[1]<-balance_gyro[1]) { //up_gyro
-       changeASpeed(1,-1);
-       Serial.println("dec esc 1 ");
-    }
-    if(sensorAccAverage[0]<-balance_acc[0] && sensorAccAverage[1]<-balance_acc[1] //){ //down_acc
-       && sensorGyroAverage[0]<-balance_gyro[0] && sensorGyroAverage[1]>balance_gyro[1]) { //down_gyro
-       changeASpeed(2,1);
-       Serial.println("inc esc 2 ");
-    }else if(sensorAccAverage[0]>balance_acc[0] && sensorAccAverage[1]>balance_acc[1] //){ //up_acc
-       && sensorGyroAverage[0]>balance_gyro[0] && sensorGyroAverage[1]<balance_gyro[1]) { //up_gyro
-       changeASpeed(2,-1);
-       Serial.println("dec esc 2 ");
-    }
-    if(sensorAccAverage[0]>balance_acc[0] && sensorAccAverage[1]<-balance_acc[1] //){ //down_acc
-       && sensorGyroAverage[0]<-balance_gyro[0] && sensorGyroAverage[1]<-balance_gyro[1]) { //down_gyro
+    if(myIMU.roll>0.1 && myIMU.gx>0.1) {
        changeASpeed(3,1);
        Serial.println("inc esc 3 ");
-    }else if(sensorAccAverage[0]>balance_acc[0] && sensorAccAverage[1]>balance_acc[1] //){ //up_acc
-       && sensorGyroAverage[0]>balance_gyro[0] && sensorGyroAverage[1]>balance_gyro[1]) { //up_gyro
+    }else if(myIMU.roll>0.1 && myIMU.gx>0.1) {
        changeASpeed(3,-1);
        Serial.println("dec esc 3 ");
-    }*/
+    }
 }
 void printMPU9250(){
   myIMU.dspDelt_t = millis() - myIMU.count;
