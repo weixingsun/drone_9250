@@ -1,7 +1,6 @@
 #include <Servo.h>
 #include <SoftwareSerial.h>
 #include "Kalman.h"
-//#define MPU_9250
 #define ArraySize(x) (sizeof(x) / sizeof(x[0]))
 //String toStr(int i) {return String(i);}
 //////////////////////////////////////////////////////////////////////////////////
@@ -12,8 +11,11 @@ const int maxPulseRate = 2000;
 const int numSensorDataSize = 10;
 const long BT_RATE = 115200;
 const int  CMD_LEN = 10;
+int SPEED_DELTA=10;
 //////////////////////////////////////////////////////////////////////////////////
 SoftwareSerial BLE_Serial(2, 3); // BLE's RX, BLE's TXD
+//#define MPU_6050
+#define MPU_9250  // ifdef MPU_6050
 #ifdef MPU_9250
   #include "MPU9250.h"
   MPU9250 myIMU;
@@ -108,48 +110,51 @@ int changeASpeed(int id, int step){
   return tmp_speed_total/ArraySize(escs);
 }
 void initMPU6050(){
+  #ifndef MPU_9250
   byte c = myIMU.readByte(MPU6050_ADDRESS, WHO_AM_I_MPU6050);
   //Serial.print("WHO_AM_I="+String(WHO_AM_I)+ "  c="+String(c));
   if (c == WHO_AM_I){
-    myIMU.MPU6050SelfTest(myIMU.selfTest);
+    //myIMU.MPU6050SelfTest(myIMU.selfTest);
     myIMU.calibrateMPU6050(myIMU.gyroBias, myIMU.accelBias);
     myIMU.initMPU6050();
     byte d = myIMU.readByte(AK8963_ADDRESS, WHO_AM_I_AK8963);
     if (d != 0x48) Error(d," WHO_AM_I_AK8963 should be 0x48");
-    myIMU.initAK8963(myIMU.factoryMagCalibration);
-      myIMU.getAres();
-      myIMU.getGres();
-      myIMU.getMres();
-      myIMU.magCalMPU6050(myIMU.magBias, myIMU.magScale);
+    //myIMU.initAK8963(myIMU.factoryMagCalibration);
+    myIMU.getAres();
+    myIMU.getGres();
+    myIMU.getMres();
+    //myIMU.initAK8963(myIMU.factoryMagCalibration);
     delay(2000);
     Serial.print("MPU6050 ready");
   }else{
     Error(c,"Could not connect to MPU6050: 0x");
   }
+  #endif
 }
 void initMPU9250(){
+  #ifdef MPU_9250
   byte c = myIMU.readByte(MPU9250_ADDRESS, WHO_AM_I_MPU9250);
   //Serial.print("WHO_AM_I="+String(WHO_AM_I)+ "  c="+String(c));
   if (c == WHO_AM_I){
-    myIMU.MPU9250SelfTest(myIMU.selfTest);
+    //myIMU.MPU9250SelfTest(myIMU.selfTest);
     myIMU.calibrateMPU9250(myIMU.gyroBias, myIMU.accelBias);
     myIMU.initMPU9250();
     byte d = myIMU.readByte(AK8963_ADDRESS, WHO_AM_I_AK8963);
     if (d != 0x48) Error(d," WHO_AM_I_AK8963 should be 0x48");
     myIMU.initAK8963(myIMU.factoryMagCalibration);
-      myIMU.getAres();
-      myIMU.getGres();
-      myIMU.getMres();
-      myIMU.magCalMPU9250(myIMU.magBias, myIMU.magScale);
+    myIMU.getAres();
+    myIMU.getGres();
+    myIMU.getMres();
+    myIMU.magCalMPU9250(myIMU.magBias, myIMU.magScale);
     delay(2000);
     Serial.print("MPU9250 ready");
   }else{
     Error(c,"Could not connect to MPU9250: 0x");
   }
+  #endif
 }
-void getDataMPU6050(){}
-void getDataMPU9250(){
-  if (myIMU.readByte(MPU9250_ADDRESS, INT_STATUS) & 0x01) {
+void calcIMU(){
+  
         myIMU.readAccelData(myIMU.accelCount);  // Read the x/y/z adc values
         // Now we'll calculate the accleration value into actual g's This depends on scale being set
         myIMU.ax = (float)myIMU.accelCount[0] * myIMU.aRes; // - myIMU.accelBias[0];
@@ -165,12 +170,11 @@ void getDataMPU9250(){
         // Calculate the magnetometer values in milliGauss
         // Include factory calibration per data sheet and user environmental corrections
         // Get actual magnetometer value, this depends on scale being set
-        myIMU.mx = (float)myIMU.magCount[0] * myIMU.mRes * myIMU.factoryMagCalibration[0] - myIMU.magBias[0];
-        myIMU.my = (float)myIMU.magCount[1] * myIMU.mRes * myIMU.factoryMagCalibration[1] - myIMU.magBias[1];
-        myIMU.mz = (float)myIMU.magCount[2] * myIMU.mRes * myIMU.factoryMagCalibration[2] - myIMU.magBias[2];
+        //myIMU.mx = (float)myIMU.magCount[0] * myIMU.mRes * myIMU.factoryMagCalibration[0] - myIMU.magBias[0];
+        //myIMU.my = (float)myIMU.magCount[1] * myIMU.mRes * myIMU.factoryMagCalibration[1] - myIMU.magBias[1];
+        //myIMU.mz = (float)myIMU.magCount[2] * myIMU.mRes * myIMU.factoryMagCalibration[2] - myIMU.magBias[2];
         // Must be called before updating quaternions!
         myIMU.updateTime();
-        
           // Source: http://www.freescale.com/files/sensors/doc/app_note/AN3461.pdf eq. 25 and eq. 26
           // atan2 outputs the value of -π to π (radians) - see http://en.wikipedia.org/wiki/Atan2
           // It is then converted from radians to degrees
@@ -201,27 +205,52 @@ void getDataMPU9250(){
          */
         //myIMU.tempCount = myIMU.readTempData();  // Read the adc values
         //myIMU.temperature = ((float) myIMU.tempCount) / 333.87 + 21.0; // Temperature in degrees Centigrade
+}
+void getDataMPU6050(){
+  #ifndef MPU_9250
+  if (myIMU.readByte(MPU6050_ADDRESS, INT_STATUS) & 0x01) {
+    calcIMU();
   }
+  #endif
+}
+void getDataMPU9250(){
+  #ifdef MPU_9250
+  if (myIMU.readByte(MPU9250_ADDRESS, INT_STATUS) & 0x01) {
+    calcIMU();
+  }
+  #endif
 }
 void autoBalance(){
     Serial.print("myIMU.roll=");Serial.print(myIMU.roll);Serial.print('\t');
     Serial.print("myIMU.pitch=");Serial.println(myIMU.pitch);
-    if(myIMU.roll>0.1 && myIMU.gx>0.1){
-       changeASpeed(0,1);
-       Serial.println("inc esc 0 ");
-    }else if(myIMU.roll>0.1 && myIMU.gx>0.1) {
-       changeASpeed(0,-1);
-       Serial.println("dec esc 0 ");
+    if(myIMU.roll<-SPEED_DELTA){ // && myIMU.gx<-1){             //left down
+       changeASpeed(LEFT_FRONT,1);
+       changeASpeed(LEFT_REAR, 1);
+       changeASpeed(RIGHT_FRONT,-1);
+       changeASpeed(RIGHT_REAR, -1);
+       Serial.println("inc esc left, dec esc right ");
+    }else if(myIMU.roll>SPEED_DELTA){ // && myIMU.gx>1) {        //left up
+       changeASpeed(LEFT_FRONT,-1);
+       changeASpeed(LEFT_REAR, -1);
+       changeASpeed(RIGHT_FRONT,1);
+       changeASpeed(RIGHT_REAR, 1);
+       Serial.println("dec esc left, inc esc right ");
     }
-    if(myIMU.roll>0.1 && myIMU.gx>0.1) {
-       changeASpeed(3,1);
-       Serial.println("inc esc 3 ");
-    }else if(myIMU.roll>0.1 && myIMU.gx>0.1) {
-       changeASpeed(3,-1);
-       Serial.println("dec esc 3 ");
+    if(myIMU.pitch>SPEED_DELTA){ // && myIMU.gy>1) {            //head down
+       changeASpeed(LEFT_FRONT, 1);
+       changeASpeed(RIGHT_FRONT,1);
+       changeASpeed(LEFT_REAR, -1);
+       changeASpeed(RIGHT_REAR,-1);
+       Serial.println("dec esc rear, inc esc head ");
+    }else if(myIMU.roll<-SPEED_DELTA){ // && myIMU.gx<-1) {     //head up
+       changeASpeed(LEFT_FRONT, -1);
+       changeASpeed(RIGHT_FRONT,-1);
+       changeASpeed(LEFT_REAR,   1);
+       changeASpeed(RIGHT_REAR,  1);
+       Serial.println("inc esc rear, dec esc head ");
     }
 }
-void printMPU9250(){
+void printMPU(){
   myIMU.dspDelt_t = millis() - myIMU.count;
   if (myIMU.dspDelt_t > 500) {  //slow down printing rate
     Serial.print("ax = ");  Serial.print((int)1000 * myIMU.ax);
@@ -232,10 +261,10 @@ void printMPU9250(){
     Serial.print(" gy = "); Serial.print(myIMU.gy, 2);
     Serial.print(" gz = "); Serial.print(myIMU.gz, 2);
     Serial.println(" deg/s");
-    Serial.print("mx = ");  Serial.print((int)myIMU.mx);
-    Serial.print(" my = "); Serial.print((int)myIMU.my);
-    Serial.print(" mz = "); Serial.print((int)myIMU.mz);
-    Serial.println(" mGauss");
+    //Serial.print("mx = ");  Serial.print((int)myIMU.mx);
+    //Serial.print(" my = "); Serial.print((int)myIMU.my);
+    //Serial.print(" mz = "); Serial.print((int)myIMU.mz);
+    //Serial.println(" mGauss");
     /*Serial.print("q0 = ");  Serial.print(*getQ());
     Serial.print(" qx = "); Serial.print(*(getQ() + 1));
     Serial.print(" qy = "); Serial.print(*(getQ() + 2));
