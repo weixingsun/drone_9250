@@ -4,8 +4,12 @@
 #define ArraySize(x) (sizeof(x) / sizeof(x[0]))
 //String toStr(int i) {return String(i);}
 //////////////////////////////////////////////////////////////////////////////////
+int LEFT_FRONT = 5;
+int LEFT_REAR = 10;
+int RIGHT_FRONT = 9;
+int RIGHT_REAR = 11;
 const int WHO_AM_I = 0x73;
-const int esc_pins[4] = {5,9,10,11};
+const int esc_pins[4] = {LEFT_FRONT,LEFT_REAR,RIGHT_FRONT,RIGHT_REAR};
 const int minPulseRate = 1000;//700
 const int maxPulseRate = 2000;
 const int numSensorDataSize = 10;
@@ -37,7 +41,6 @@ double delta;
 //////////////////////////////////////////////////////////////////////////////////
 bool cmd_end=false;
 String cmd="";
-
 //////////////////////////////////////////////////////////////////////////////////
 void setup() {
   Wire.begin();
@@ -223,31 +226,23 @@ void getDataMPU9250(){
 void autoBalance(){
     Serial.print("myIMU.roll=");Serial.print(myIMU.roll);Serial.print('\t');
     Serial.print("myIMU.pitch=");Serial.println(myIMU.pitch);
-    if(myIMU.roll<-SPEED_DELTA){ // && myIMU.gx<-1){             //left down
+    if(myIMU.roll<-SPEED_DELTA){     //left front go up
        changeASpeed(LEFT_FRONT,1);
-       changeASpeed(LEFT_REAR, 1);
-       changeASpeed(RIGHT_FRONT,-1);
        changeASpeed(RIGHT_REAR, -1);
-       Serial.println("inc esc left, dec esc right ");
-    }else if(myIMU.roll>SPEED_DELTA){ // && myIMU.gx>1) {        //left up
+       Serial.println("LEFT_FRONT up");
+    }else if(myIMU.roll>SPEED_DELTA){    //left front go down
        changeASpeed(LEFT_FRONT,-1);
-       changeASpeed(LEFT_REAR, -1);
-       changeASpeed(RIGHT_FRONT,1);
        changeASpeed(RIGHT_REAR, 1);
-       Serial.println("dec esc left, inc esc right ");
+       Serial.println("LEFT_FRONT down");
     }
-    if(myIMU.pitch>SPEED_DELTA){ // && myIMU.gy>1) {            //head down
-       changeASpeed(LEFT_FRONT, 1);
+    if(myIMU.pitch>SPEED_DELTA){     //right front go up
        changeASpeed(RIGHT_FRONT,1);
        changeASpeed(LEFT_REAR, -1);
-       changeASpeed(RIGHT_REAR,-1);
-       Serial.println("dec esc rear, inc esc head ");
-    }else if(myIMU.roll<-SPEED_DELTA){ // && myIMU.gx<-1) {     //head up
-       changeASpeed(LEFT_FRONT, -1);
+       Serial.println("RIGHT_FRONT up");
+    }else if(myIMU.roll<-SPEED_DELTA){     //right front go down
        changeASpeed(RIGHT_FRONT,-1);
        changeASpeed(LEFT_REAR,   1);
-       changeASpeed(RIGHT_REAR,  1);
-       Serial.println("inc esc rear, dec esc head ");
+       Serial.println("RIGHT_FRONT down");
     }
 }
 void printMPU(){
