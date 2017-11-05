@@ -4,18 +4,18 @@
 #define ArraySize(x) (sizeof(x) / sizeof(x[0]))
 //String toStr(int i) {return String(i);}
 //////////////////////////////////////////////////////////////////////////////////
-int LEFT_FRONT = 10;   //10
-int LEFT_REAR = 11;    //11
-int RIGHT_FRONT = 9;   //9
-int RIGHT_REAR = 5;    //5
+int TEN = 10;   //10
+int ELE = 11;    //11
+int NIN = 9;   //9
+int FIV = 5;    //5
 const int WHO_AM_I = 0x73;
-const int esc_pins[4] = {LEFT_FRONT,LEFT_REAR,RIGHT_FRONT,RIGHT_REAR};
+const int esc_pins[4] = {ELE,TEN,NIN,FIV};
 const int minPulseRate = 1000;//700
 const int maxPulseRate = 2000;
 const int numSensorDataSize = 10;
 const long BT_RATE = 115200;
 const int  CMD_LEN = 10;
-int SPEED_DELTA=10;
+int SENSOR_DELTA=5;
 int SPEED_STEP=20;
 //////////////////////////////////////////////////////////////////////////////////
 SoftwareSerial BLE_Serial(2, 3); // BLE's RX, BLE's TXD
@@ -225,23 +225,23 @@ void getDataMPU9250(){
   #endif
 }
 void autoBalance(){
-    if(myIMU.roll<-SPEED_DELTA){     //left front go up
-       changeASpeed(LEFT_FRONT, -SPEED_STEP);
-       changeASpeed(RIGHT_REAR,  SPEED_STEP);
-       Serial.println("LEFT_FRONT up");
-    }else if(myIMU.roll>SPEED_DELTA){    //left front go down
-       changeASpeed(LEFT_FRONT, SPEED_STEP);
-       changeASpeed(RIGHT_REAR,-SPEED_STEP);
-       Serial.println("LEFT_FRONT down");
+    if(myIMU.roll>SENSOR_DELTA && myIMU.pitch<-SENSOR_DELTA){     //5d
+       changeASpeed(FIV, -SPEED_STEP);
+       changeASpeed(FIV,  SPEED_STEP);
+       Serial.println("5d");
+    }else if(myIMU.roll<-SENSOR_DELTA && myIMU.pitch>SENSOR_DELTA){ //5u
+       changeASpeed(FIV, SPEED_STEP);
+       changeASpeed(FIV,-SPEED_STEP);
+       Serial.println("5u");
     }
-    if(myIMU.pitch>SPEED_DELTA){     //right front go up
-       changeASpeed(RIGHT_FRONT,-SPEED_STEP);
-       changeASpeed(LEFT_REAR,   SPEED_STEP);
-       Serial.println("RIGHT_FRONT up");
-    }else if(myIMU.roll<-SPEED_DELTA){     //right front go down
-       changeASpeed(RIGHT_FRONT,SPEED_STEP);
-       changeASpeed(LEFT_REAR, -SPEED_STEP);
-       Serial.println("RIGHT_FRONT down");
+    if(myIMU.roll>SENSOR_DELTA && myIMU.pitch>SENSOR_DELTA){      //9d
+       changeASpeed(NIN,-SPEED_STEP);
+       changeASpeed(NIN, SPEED_STEP);
+       Serial.println("9d");
+    }else if(myIMU.roll<-SENSOR_DELTA && myIMU.pitch<-SENSOR_DELTA){ //9u
+       changeASpeed(NIN, SPEED_STEP);
+       changeASpeed(NIN, SPEED_STEP);
+       Serial.println("9u");
     }
 }
 void printMPU(){
