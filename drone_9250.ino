@@ -4,10 +4,10 @@
 #define ArraySize(x) (sizeof(x) / sizeof(x[0]))
 //String toStr(int i) {return String(i);}
 //////////////////////////////////////////////////////////////////////////////////
-int LEFT_FRONT = 5;
-int LEFT_REAR = 10;
-int RIGHT_FRONT = 9;
-int RIGHT_REAR = 11;
+int LEFT_FRONT = 10;   //10
+int LEFT_REAR = 11;    //11
+int RIGHT_FRONT = 9;   //9
+int RIGHT_REAR = 5;    //5
 const int WHO_AM_I = 0x73;
 const int esc_pins[4] = {LEFT_FRONT,LEFT_REAR,RIGHT_FRONT,RIGHT_REAR};
 const int minPulseRate = 1000;//700
@@ -16,6 +16,7 @@ const int numSensorDataSize = 10;
 const long BT_RATE = 115200;
 const int  CMD_LEN = 10;
 int SPEED_DELTA=10;
+int SPEED_STEP=20;
 //////////////////////////////////////////////////////////////////////////////////
 SoftwareSerial BLE_Serial(2, 3); // BLE's RX, BLE's TXD
 //#define MPU_6050
@@ -68,7 +69,7 @@ void loop() {
 #endif
   computeKalman();
   printKalman();
-  //autoBalance();
+  autoBalance();
   delay(200);
 }
 void readCmd(){
@@ -224,24 +225,22 @@ void getDataMPU9250(){
   #endif
 }
 void autoBalance(){
-    Serial.print("myIMU.roll=");Serial.print(myIMU.roll);Serial.print('\t');
-    Serial.print("myIMU.pitch=");Serial.println(myIMU.pitch);
     if(myIMU.roll<-SPEED_DELTA){     //left front go up
-       changeASpeed(LEFT_FRONT,1);
-       changeASpeed(RIGHT_REAR, -1);
+       changeASpeed(LEFT_FRONT, -SPEED_STEP);
+       changeASpeed(RIGHT_REAR,  SPEED_STEP);
        Serial.println("LEFT_FRONT up");
     }else if(myIMU.roll>SPEED_DELTA){    //left front go down
-       changeASpeed(LEFT_FRONT,-1);
-       changeASpeed(RIGHT_REAR, 1);
+       changeASpeed(LEFT_FRONT, SPEED_STEP);
+       changeASpeed(RIGHT_REAR,-SPEED_STEP);
        Serial.println("LEFT_FRONT down");
     }
     if(myIMU.pitch>SPEED_DELTA){     //right front go up
-       changeASpeed(RIGHT_FRONT,1);
-       changeASpeed(LEFT_REAR, -1);
+       changeASpeed(RIGHT_FRONT,-SPEED_STEP);
+       changeASpeed(LEFT_REAR,   SPEED_STEP);
        Serial.println("RIGHT_FRONT up");
     }else if(myIMU.roll<-SPEED_DELTA){     //right front go down
-       changeASpeed(RIGHT_FRONT,-1);
-       changeASpeed(LEFT_REAR,   1);
+       changeASpeed(RIGHT_FRONT,SPEED_STEP);
+       changeASpeed(LEFT_REAR, -SPEED_STEP);
        Serial.println("RIGHT_FRONT down");
     }
 }
