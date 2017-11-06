@@ -15,12 +15,12 @@ const int maxPulseRate = 2000;
 const int numSensorDataSize = 10;
 const long BT_RATE = 115200;
 const int  CMD_LEN = 10;
-int SENSOR_DELTA=5;
+int SENSOR_DELTA=3;
 int SPEED_STEP=20;
 //////////////////////////////////////////////////////////////////////////////////
 SoftwareSerial BLE_Serial(2, 3); // BLE's RX, BLE's TXD
 //#define MPU_6050
-#define MPU_9250  // ifdef MPU_6050
+#define MPU_9250
 #ifdef MPU_9250
   #include "MPU9250.h"
   MPU9250 myIMU;
@@ -48,25 +48,15 @@ void setup() {
   Serial.begin(BT_RATE);
   BLE_Serial.begin(BT_RATE);
   initEscs();
-#ifdef MPU_9250
-  initMPU9250();
-  getDataMPU9250();
-#else
-  initMPU6050();
-  getDataMPU6050();
-#endif
+  initMPU();
+  getDataMPU();
   initKalman();
   //writeTo4Escs(33);
 }
 void loop() {
   readCmd();
-#ifdef MPU_9250
-  getDataMPU9250();
+  getDataMPU();
   //printMPU9250();
-#else
-  getDataMPU6050();
-  //printMPU6050();
-#endif
   computeKalman();
   printKalman();
   autoBalance();
@@ -96,25 +86,24 @@ void readCmd(){
 int changeAllSpeed(int step){
   tmp_speed_total=0;
   for (i=0;i<ArraySize(escs);i++){
-    tmp_speed=escs[i].read();  //readMicroseconds
+    tmp_speed=escs[i].readMicroseconds();  //read
     tmp_speed+=step;
-    escs[i].write(tmp_speed);
-    //escs[id].writeMicroseconds(tmp_speed);
-    tmp_speed_total+=escs[i].read();  //readMicroseconds
-    Serial.print("change speed:"+tmp_speed);
+    escs[i].writeMicroseconds(tmp_speed);
+    tmp_speed_total+=escs[i].readMicroseconds();
   }
   return tmp_speed_total/ArraySize(escs);
 }
 
 int changeASpeed(int id, int step){
-  tmp_speed=escs[id].read();  //readMicroseconds
+  tmp_speed=escs[id].readMicroseconds();
   tmp_speed+=step;
-  escs[id].write(tmp_speed);  //writeMicroseconds
+  escs[id].writeMicroseconds(tmp_speed);
   tmp_speed_total+=step;
+  Serial.print(id+" change speed:"+tmp_speed);
   return tmp_speed_total/ArraySize(escs);
 }
-void initMPU6050(){
-  #ifndef MPU_9250
+void initMPU(){
+#ifndef MPU_9250
   byte c = myIMU.readByte(MPU6050_ADDRESS, WHO_AM_I_MPU6050);
   //Serial.print("WHO_AM_I="+String(WHO_AM_I)+ "  c="+String(c));
   if (c == WHO_AM_I){
@@ -133,10 +122,7 @@ void initMPU6050(){
   }else{
     Error(c,"Could not connect to MPU6050: 0x");
   }
-  #endif
-}
-void initMPU9250(){
-  #ifdef MPU_9250
+#else
   byte c = myIMU.readByte(MPU9250_ADDRESS, WHO_AM_I_MPU9250);
   //Serial.print("WHO_AM_I="+String(WHO_AM_I)+ "  c="+String(c));
   if (c == WHO_AM_I){
@@ -155,73 +141,69 @@ void initMPU9250(){
   }else{
     Error(c,"Could not connect to MPU9250: 0x");
   }
-  #endif
 }
+#endif
 void calcIMU(){
-  
-        myIMU.readAccelData(myIMU.accelCount);  // Read the x/y/z adc values
-        // Now we'll calculate the accleration value into actual g's This depends on scale being set
-        myIMU.ax = (float)myIMU.accelCount[0] * myIMU.aRes; // - myIMU.accelBias[0];
-        myIMU.ay = (float)myIMU.accelCount[1] * myIMU.aRes; // - myIMU.accelBias[1];
-        myIMU.az = (float)myIMU.accelCount[2] * myIMU.aRes; // - myIMU.accelBias[2];
-        myIMU.readGyroData(myIMU.gyroCount);  // Read the x/y/z adc values
-        // Calculate the gyro value into actual degrees per second
-        // This depends on scale being set
-        myIMU.gx = (float)myIMU.gyroCount[0] * myIMU.gRes;
-        myIMU.gy = (float)myIMU.gyroCount[1] * myIMU.gRes;
-        myIMU.gz = (float)myIMU.gyroCount[2] * myIMU.gRes;
-        myIMU.readMagData(myIMU.magCount);  // Read the x/y/z adc values
-        // Calculate the magnetometer values in milliGauss
-        // Include factory calibration per data sheet and user environmental corrections
-        // Get actual magnetometer value, this depends on scale being set
-        //myIMU.mx = (float)myIMU.magCount[0] * myIMU.mRes * myIMU.factoryMagCalibration[0] - myIMU.magBias[0];
-        //myIMU.my = (float)myIMU.magCount[1] * myIMU.mRes * myIMU.factoryMagCalibration[1] - myIMU.magBias[1];
-        //myIMU.mz = (float)myIMU.magCount[2] * myIMU.mRes * myIMU.factoryMagCalibration[2] - myIMU.magBias[2];
-        // Must be called before updating quaternions!
-        myIMU.updateTime();
-          // Source: http://www.freescale.com/files/sensors/doc/app_note/AN3461.pdf eq. 25 and eq. 26
-          // atan2 outputs the value of -π to π (radians) - see http://en.wikipedia.org/wiki/Atan2
-          // It is then converted from radians to degrees
-        #ifdef RESTRICT_PITCH // Eq. 25 and 26
-          myIMU.roll   = atan2(myIMU.ay, myIMU.az) * RAD_TO_DEG;
-          myIMU.pitch  = atan(-myIMU.ax / sqrt(myIMU.ay * myIMU.ay + myIMU.az * myIMU.az)) * RAD_TO_DEG;
-        #else // Eq. 28 and 29
-          myIMU.roll   = atan(myIMU.ay / sqrt(myIMU.ax * myIMU.ax + myIMU.az * myIMU.az)) * RAD_TO_DEG;
-          myIMU.pitch  = atan2(-myIMU.ax, myIMU.az) * RAD_TO_DEG;
-        #endif
-        /*MahonyQuaternionUpdate(myIMU.ax, myIMU.ay, myIMU.az, myIMU.gx * DEG_TO_RAD,
-                               myIMU.gy * DEG_TO_RAD, myIMU.gz * DEG_TO_RAD, myIMU.my,
-                               myIMU.mx, myIMU.mz, myIMU.deltat);
-        myIMU.yaw   = atan2(2.0f * (*(getQ() + 1) * *(getQ() + 2) + *getQ()
-                                    * *(getQ() + 3)), *getQ() * *getQ() + * (getQ() + 1)
-                            * *(getQ() + 1) - * (getQ() + 2) * *(getQ() + 2) - * (getQ() + 3)
-                            * *(getQ() + 3));
-        myIMU.pitch = -asin(2.0f * (*(getQ() + 1) * *(getQ() + 3) - *getQ()
-                                    * *(getQ() + 2)));
-        myIMU.roll  = atan2(2.0f * (*getQ() * *(getQ() + 1) + * (getQ() + 2)
-                                    * *(getQ() + 3)), *getQ() * *getQ() - * (getQ() + 1)
-                            * *(getQ() + 1) - * (getQ() + 2) * *(getQ() + 2) + * (getQ() + 3)
-                            * *(getQ() + 3));
-        myIMU.pitch *= RAD_TO_DEG;
-        myIMU.yaw   *= RAD_TO_DEG;
-        myIMU.yaw  -= 8.36; //Buenos aires 2017
-        myIMU.roll *= RAD_TO_DEG;
-         */
-        //myIMU.tempCount = myIMU.readTempData();  // Read the adc values
-        //myIMU.temperature = ((float) myIMU.tempCount) / 333.87 + 21.0; // Temperature in degrees Centigrade
-}
-void getDataMPU6050(){
-  #ifndef MPU_9250
-  if (myIMU.readByte(MPU6050_ADDRESS, INT_STATUS) & 0x01) {
-    calcIMU();
-  }
+  myIMU.readAccelData(myIMU.accelCount);  // Read the x/y/z adc values
+  // Now we'll calculate the accleration value into actual g's This depends on scale being set
+  myIMU.ax = (float)myIMU.accelCount[0] * myIMU.aRes; // - myIMU.accelBias[0];
+  myIMU.ay = (float)myIMU.accelCount[1] * myIMU.aRes; // - myIMU.accelBias[1];
+  myIMU.az = (float)myIMU.accelCount[2] * myIMU.aRes; // - myIMU.accelBias[2];
+  myIMU.readGyroData(myIMU.gyroCount);  // Read the x/y/z adc values
+  // Calculate the gyro value into actual degrees per second
+  // This depends on scale being set
+  myIMU.gx = (float)myIMU.gyroCount[0] * myIMU.gRes;
+  myIMU.gy = (float)myIMU.gyroCount[1] * myIMU.gRes;
+  myIMU.gz = (float)myIMU.gyroCount[2] * myIMU.gRes;
+  myIMU.readMagData(myIMU.magCount);  // Read the x/y/z adc values
+  // Calculate the magnetometer values in milliGauss
+  // Include factory calibration per data sheet and user environmental corrections
+  // Get actual magnetometer value, this depends on scale being set
+  //myIMU.mx = (float)myIMU.magCount[0] * myIMU.mRes * myIMU.factoryMagCalibration[0] - myIMU.magBias[0];
+  //myIMU.my = (float)myIMU.magCount[1] * myIMU.mRes * myIMU.factoryMagCalibration[1] - myIMU.magBias[1];
+  //myIMU.mz = (float)myIMU.magCount[2] * myIMU.mRes * myIMU.factoryMagCalibration[2] - myIMU.magBias[2];
+  // Must be called before updating quaternions!
+  myIMU.updateTime();
+    // Source: http://www.freescale.com/files/sensors/doc/app_note/AN3461.pdf eq. 25 and eq. 26
+    // atan2 outputs the value of -π to π (radians) - see http://en.wikipedia.org/wiki/Atan2
+    // It is then converted from radians to degrees
+  #ifdef RESTRICT_PITCH // Eq. 25 and 26
+    myIMU.roll   = atan2(myIMU.ay, myIMU.az) * RAD_TO_DEG;
+    myIMU.pitch  = atan(-myIMU.ax / sqrt(myIMU.ay * myIMU.ay + myIMU.az * myIMU.az)) * RAD_TO_DEG;
+  #else // Eq. 28 and 29
+    myIMU.roll   = atan(myIMU.ay / sqrt(myIMU.ax * myIMU.ax + myIMU.az * myIMU.az)) * RAD_TO_DEG;
+    myIMU.pitch  = atan2(-myIMU.ax, myIMU.az) * RAD_TO_DEG;
   #endif
+  /*MahonyQuaternionUpdate(myIMU.ax, myIMU.ay, myIMU.az, myIMU.gx * DEG_TO_RAD,
+                         myIMU.gy * DEG_TO_RAD, myIMU.gz * DEG_TO_RAD, myIMU.my,
+                         myIMU.mx, myIMU.mz, myIMU.deltat);
+  myIMU.yaw   = atan2(2.0f * (*(getQ() + 1) * *(getQ() + 2) + *getQ()
+                              * *(getQ() + 3)), *getQ() * *getQ() + * (getQ() + 1)
+                      * *(getQ() + 1) - * (getQ() + 2) * *(getQ() + 2) - * (getQ() + 3)
+                      * *(getQ() + 3));
+  myIMU.pitch = -asin(2.0f * (*(getQ() + 1) * *(getQ() + 3) - *getQ()
+                              * *(getQ() + 2)));
+  myIMU.roll  = atan2(2.0f * (*getQ() * *(getQ() + 1) + * (getQ() + 2)
+                              * *(getQ() + 3)), *getQ() * *getQ() - * (getQ() + 1)
+                      * *(getQ() + 1) - * (getQ() + 2) * *(getQ() + 2) + * (getQ() + 3)
+                      * *(getQ() + 3));
+  myIMU.pitch *= RAD_TO_DEG;
+  myIMU.yaw   *= RAD_TO_DEG;
+  myIMU.yaw  -= 8.36; //Buenos aires 2017
+  myIMU.roll *= RAD_TO_DEG;
+   */
+  //myIMU.tempCount = myIMU.readTempData();  // Read the adc values
+  //myIMU.temperature = ((float) myIMU.tempCount) / 333.87 + 21.0; // Temperature in degrees Centigrade
 }
-void getDataMPU9250(){
+void getDataMPU(){
   #ifdef MPU_9250
-  if (myIMU.readByte(MPU9250_ADDRESS, INT_STATUS) & 0x01) {
-    calcIMU();
-  }
+    if (myIMU.readByte(MPU9250_ADDRESS, INT_STATUS) & 0x01) {
+      calcIMU();
+    }
+  #else
+    if (myIMU.readByte(MPU6050_ADDRESS, INT_STATUS) & 0x01) {
+      calcIMU();
+    }
   #endif
 }
 void autoBalance(){
