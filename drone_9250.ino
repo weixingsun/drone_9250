@@ -15,8 +15,9 @@ const int maxPulseRate = 2000;
 const int numSensorDataSize = 10;
 const long BT_RATE = 115200;
 const int  CMD_LEN = 10;
-int SENSOR_DELTA=3;
-int SPEED_STEP=20;
+float SPEED_RATIO_R=1;
+float SPEED_RATIO_P=1;
+//int SPEED_STEP=20;
 //////////////////////////////////////////////////////////////////////////////////
 SoftwareSerial BLE_Serial(2, 3); // BLE's RX, BLE's TXD
 //#define MPU_6050
@@ -207,24 +208,13 @@ void getDataMPU(){
   #endif
 }
 void autoBalance(){
-    if(myIMU.roll>SENSOR_DELTA && myIMU.pitch<-SENSOR_DELTA){     //5d
-       changeASpeed(FIV, -SPEED_STEP);
-       changeASpeed(FIV,  SPEED_STEP);
-       Serial.println("5d");
-    }else if(myIMU.roll<-SENSOR_DELTA && myIMU.pitch>SENSOR_DELTA){ //5u
-       changeASpeed(FIV, SPEED_STEP);
-       changeASpeed(FIV,-SPEED_STEP);
-       Serial.println("5u");
-    }
-    if(myIMU.roll>SENSOR_DELTA && myIMU.pitch>SENSOR_DELTA){      //9d
-       changeASpeed(NIN,-SPEED_STEP);
-       changeASpeed(NIN, SPEED_STEP);
-       Serial.println("9d");
-    }else if(myIMU.roll<-SENSOR_DELTA && myIMU.pitch<-SENSOR_DELTA){ //9u
-       changeASpeed(NIN, SPEED_STEP);
-       changeASpeed(NIN, SPEED_STEP);
-       Serial.println("9u");
-    }
+    int delta = (int)(SPEED_RATIO_R*myIMU.roll + SPEED_RATIO_P*myIMU.pitch);
+       changeASpeed(FIV, delta);
+       changeASpeed(TEN,-delta);
+       changeASpeed(NIN,-delta);
+       changeASpeed(ELE, delta);
+       Serial.println("5/10 +- "+delta);
+       Serial.println("9/11 +- "+delta);
 }
 void printMPU(){
   myIMU.dspDelt_t = millis() - myIMU.count;
