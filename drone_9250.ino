@@ -4,36 +4,59 @@
 #define ArraySize(x) (sizeof(x) / sizeof(x[0]))
 //String toStr(int i) {return String(i);}
 //////////////////////////////////////////////////////////////////////////////////
-int TEN = 10;   //10
-int ELE = 11;    //11
-int NIN = 9;   //9
-int FIV = 5;    //5
-const int WHO_AM_I = 0x73;
-const int esc_pins[4] = {ELE,TEN,NIN,FIV};
-const int minPulseRate = 1000;//700
+
+int ACT_SS = 0;  //no change
+int ACT_YC = 1;  //yaw clockwise
+int ACT_YA = 2;  //yaw anti-clockwise
+int ACT_PC = 3;  //pitch clockwise
+int ACT_PA = 4;  //pitch anti-clockwise
+int ACT_RC = 5;  //roll clockwise
+int ACT_RA = 6;  //roll anti-clockwise
+int ACT_UP = 7;  //take-off
+int ACT_DN = 8;  //land
+
+int TEN = 10;   //1  //FL
+int NIN = 9;    //2  //FR
+int FIV = 5;    //3  //RR
+int ELE = 11;   //4  //RL
+const int minPulseRate = 1000;
 const int maxPulseRate = 1800;
+Servo escs[4];
+const int esc_pins[4] = {TEN,NIN,FIV,ELE};
+int esc_ms[4] = {minPulseRate,minPulseRate,minPulseRate,minPulseRate};
+// YC -> 1,3 (+) 2,4 (-)
+// YA -> 2,4 (+) 1,3 (-)
+// PC -> 1,2 (+) 3,4 (-)
+// PA -> 1,2 (-) 3,4 (+)
+// RC -> 1,4 (+) 2,3 (-)
+// RA -> 1,4 (-) 2,3 (+)
+void changeMotorPulse(int idx,int delta){
+  esc_ms[idx]+=delta;
+  escs[idx].writeMicroseconds(esc_ms[idx]);
+}
+int Yaw(int delta){
+  changeMotorPulse(0, delta);
+  changeMotorPulse(2, delta);
+  changeMotorPulse(1, -delta);
+  changeMotorPulse(3, -delta);
+}
+int Pitch(int delta){
+  changeMotorPulse(0, delta);
+  changeMotorPulse(1, delta);
+  changeMotorPulse(2, -delta);
+  changeMotorPulse(3, -delta);
+}
+int Roll(int delta){
+  changeMotorPulse(0, delta);
+  changeMotorPulse(3, delta);
+  changeMotorPulse(1, -delta);
+  changeMotorPulse(2, -delta);
+}
+
+const int WHO_AM_I = 0x73;
 const int numSensorDataSize = 10;
 const long BT_RATE = 115200;
 const int  CMD_LEN = 10;
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-float pid_i_mem_roll, pid_roll_setpoint, gyro_roll_input, pid_output_roll, pid_last_roll_d_error;
-float pid_i_mem_pitch, pid_pitch_setpoint, gyro_pitch_input, pid_output_pitch, pid_last_pitch_d_error;
-float pid_i_mem_yaw, pid_yaw_setpoint, gyro_yaw_input, pid_output_yaw, pid_last_yaw_d_error;
-float pid_p_gain_roll = 1.3;               //Gain setting for the roll P-controller
-float pid_i_gain_roll = 0.04;              //Gain setting for the roll I-controller
-float pid_d_gain_roll = 18.0;              //Gain setting for the roll D-controller
-int pid_max_roll = 400;                    //Maximum output of the PID-controller (+/-)
-
-float pid_p_gain_yaw = 3.8;                //Gain setting for the pitch P-controller. //4.0
-float pid_i_gain_yaw = 0.015;               //Gain setting for the pitch I-controller. //0.02
-float pid_d_gain_yaw = 0.0;                //Gain setting for the pitch D-controller.
-int pid_max_yaw = 400; //Maximum output of the PID-controller (+/-)
-
-float pid_p_gain_pitch = pid_p_gain_roll;  //Gain setting for the pitch P-controller.
-float pid_i_gain_pitch = pid_i_gain_roll;  //Gain setting for the pitch I-controller.
-float pid_d_gain_pitch = pid_d_gain_roll;  //Gain setting for the pitch D-controller.
-int pid_max_pitch = pid_max_roll;          //Maximum output of the PID-controller (+/-)
-float roll_level_adjust, pitch_level_adjust, pid_error_temp;
 
 //////////////////////////////////////////////////////////////////////////////////
 SoftwareSerial BLE_Serial(2, 3); // BLE's RX, BLE's TXD
@@ -46,7 +69,6 @@ SoftwareSerial BLE_Serial(2, 3); // BLE's RX, BLE's TXD
   #include "MPU6050.h"
   MPU6050 myIMU;
 #endif
-Servo escs[4];
 int current_speed,i;
 //////////////////////////////////////////////////////////////////////////////////
 #define RESTRICT_PITCH // Comment out to restrict roll to ±90deg instead - please read: http://www.freescale.com/files/sensors/doc/app_note/AN3461.pdf
@@ -69,7 +91,6 @@ void setup() {
   initMPU();
   //if (myIMU.readByte(MPU9250_ADDRESS, INT_STATUS) & 0x01) {  //MPU6050_ADDRESS
   calcIMU();
-  calculate_pid();
   //}
   //initKalman();
   changeAllSpeed(1000);
@@ -78,7 +99,6 @@ void loop() {
   readCmd();
   //if (myIMU.readByte(MPU9250_ADDRESS, INT_STATUS) & 0x01) {  //MPU6050_ADDRESS
   calcIMU();
-  calculate_pid();
   //}
   //computeKalman();
   //printKalman();
@@ -86,16 +106,6 @@ void loop() {
   changeAllSpeed(current_speed);
   printSpeeds();
   delay(200);
-}
-void stop(){
-  pid_roll_setpoint = 0;
-  pid_roll_setpoint -= roll_level_adjust;                                   //Subtract the angle correction from the standardized receiver roll input value.
-  pid_roll_setpoint /= 3.0;                                                 //Divide the setpoint for the PID roll controller by 3 to get angles in degrees.
-  pid_pitch_setpoint = 0;
-  pid_pitch_setpoint -= pitch_level_adjust;                                  //Subtract the angle correction from the standardized receiver pitch input value.
-  pid_pitch_setpoint /= 3.0;                                                 //Divide the setpoint for the PID pitch controller by 3 to get angles in degrees.
-  pid_yaw_setpoint = 0;
-  
 }
 void readCmd(){
   byte byte_count=BLE_Serial.available();
@@ -120,14 +130,14 @@ void readCmd(){
 }
 int changeAllSpeed(int throttle){
     if (throttle > maxPulseRate) throttle = maxPulseRate;        //We need some room to keep full control at full throttle.
-    int esc_1 = throttle - pid_output_pitch + pid_output_roll - pid_output_yaw; //Calculate the pulse for esc 1 (front-right - CCW)
-    escs[3].writeMicroseconds(esc_1);
-    int esc_2 = throttle + pid_output_pitch + pid_output_roll + pid_output_yaw; //Calculate the pulse for esc 2 (rear-right - CW)
-    escs[2].writeMicroseconds(esc_2);
-    int esc_3 = throttle + pid_output_pitch - pid_output_roll - pid_output_yaw; //Calculate the pulse for esc 3 (rear-left - CCW)
-    escs[1].writeMicroseconds(esc_3);
-    int esc_4 = throttle - pid_output_pitch - pid_output_roll + pid_output_yaw; //Calculate the pulse for esc 4 (front-left - CW)
-    escs[0].writeMicroseconds(esc_4);
+    //int esc_1 = throttle - pid_output_pitch + pid_output_roll - pid_output_yaw; //Calculate the pulse for esc 1 (front-right - CCW)
+    escs[3].writeMicroseconds(throttle);
+    //int esc_2 = throttle + pid_output_pitch + pid_output_roll + pid_output_yaw; //Calculate the pulse for esc 2 (rear-right - CW)
+    escs[2].writeMicroseconds(throttle);
+    //int esc_3 = throttle + pid_output_pitch - pid_output_roll - pid_output_yaw; //Calculate the pulse for esc 3 (rear-left - CCW)
+    escs[1].writeMicroseconds(throttle);
+    //int esc_4 = throttle - pid_output_pitch - pid_output_roll + pid_output_yaw; //Calculate the pulse for esc 4 (front-left - CW)
+    escs[0].writeMicroseconds(throttle);
 }
 void initMPU(){
 #ifndef MPU_9250
@@ -219,8 +229,6 @@ void calcIMU(){
   myIMU.yaw  -= 8.36; //Buenos aires 2017
   myIMU.roll *= RAD_TO_DEG;
    */
-  //myIMU.tempCount = myIMU.readTempData();  // Read the adc values
-  //myIMU.temperature = ((float) myIMU.tempCount) / 333.87 + 21.0; // Temperature in degrees Centigrade
 }
 /*void autoBalance(){
     int delta_r = (int)(SPEED_RATIO_R*myIMU.roll);
@@ -230,59 +238,7 @@ void calcIMU(){
        changeASpeed(NIN,-delta);
        changeASpeed(ELE, delta);
 }*/
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-//The PID controllers are explained in part 5 of the YMFC-3D video session:
-//https://youtu.be/JBvnB0279-Q 
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-void calculate_pid(){
-  //65.5 = 1 deg/sec (check the datasheet of the MPU-6050 for more information).
-  gyro_roll_input = (gyro_roll_input * 0.7) + ((myIMU.roll / 65.5) * 0.3);   //Gyro pid input is deg/sec.
-  gyro_pitch_input = (gyro_pitch_input * 0.7) + ((myIMU.pitch / 65.5) * 0.3);//Gyro pid input is deg/sec.
-  gyro_yaw_input = (gyro_yaw_input * 0.7) + ((myIMU.yaw / 65.5) * 0.3);      //Gyro pid input is deg/sec.
 
-  //Roll calculations
-  pid_error_temp = gyro_roll_input - pid_roll_setpoint;
-  pid_i_mem_roll += pid_i_gain_roll * pid_error_temp;
-  if(pid_i_mem_roll > pid_max_roll)pid_i_mem_roll = pid_max_roll;
-  else if(pid_i_mem_roll < pid_max_roll * -1)pid_i_mem_roll = pid_max_roll * -1;
-
-  pid_output_roll = pid_p_gain_roll * pid_error_temp + pid_i_mem_roll + pid_d_gain_roll * (pid_error_temp - pid_last_roll_d_error);
-  if(pid_output_roll > pid_max_roll)pid_output_roll = pid_max_roll;
-  else if(pid_output_roll < pid_max_roll * -1)pid_output_roll = pid_max_roll * -1;
-
-  pid_last_roll_d_error = pid_error_temp;
-
-  //Pitch calculations
-  pid_error_temp = gyro_pitch_input - pid_pitch_setpoint;
-  pid_i_mem_pitch += pid_i_gain_pitch * pid_error_temp;
-  if(pid_i_mem_pitch > pid_max_pitch)pid_i_mem_pitch = pid_max_pitch;
-  else if(pid_i_mem_pitch < pid_max_pitch * -1)pid_i_mem_pitch = pid_max_pitch * -1;
-
-  pid_output_pitch = pid_p_gain_pitch * pid_error_temp + pid_i_mem_pitch + pid_d_gain_pitch * (pid_error_temp - pid_last_pitch_d_error);
-  if(pid_output_pitch > pid_max_pitch)pid_output_pitch = pid_max_pitch;
-  else if(pid_output_pitch < pid_max_pitch * -1)pid_output_pitch = pid_max_pitch * -1;
-
-  pid_last_pitch_d_error = pid_error_temp;
-
-  //Yaw calculations
-  pid_error_temp = gyro_yaw_input - pid_yaw_setpoint;
-  pid_i_mem_yaw += pid_i_gain_yaw * pid_error_temp;
-  if(pid_i_mem_yaw > pid_max_yaw)pid_i_mem_yaw = pid_max_yaw;
-  else if(pid_i_mem_yaw < pid_max_yaw * -1)pid_i_mem_yaw = pid_max_yaw * -1;
-
-  pid_output_yaw = pid_p_gain_yaw * pid_error_temp + pid_i_mem_yaw + pid_d_gain_yaw * (pid_error_temp - pid_last_yaw_d_error);
-  if(pid_output_yaw > pid_max_yaw)pid_output_yaw = pid_max_yaw;
-  else if(pid_output_yaw < pid_max_yaw * -1)pid_output_yaw = pid_max_yaw * -1;
-
-  pid_last_yaw_d_error = pid_error_temp;
-  Serial.print("pid_output_roll=");
-  Serial.print(pid_output_roll);
-  Serial.print("  pid_output_pitch=");
-  Serial.print(pid_output_pitch);
-  Serial.print("  pid_output_yaw=");
-  Serial.println(pid_output_yaw);
-  
-}
 void initEscs() {
   for (i=0;i<ArraySize(escs);i++){
     //Serial.println("init escs:"+String(i));
