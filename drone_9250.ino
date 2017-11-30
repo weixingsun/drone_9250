@@ -14,7 +14,6 @@ int ACT_RC = 5;  //roll clockwise
 int ACT_RA = 6;  //roll anti-clockwise
 int ACT_UP = 7;  //take-off
 int ACT_DN = 8;  //land
-
 int TEN = 10;   //1  //FL
 int NIN = 9;    //2  //FR
 int FIV = 5;    //3  //RR
@@ -34,23 +33,27 @@ void changeMotorPulse(int idx,int delta){
   esc_ms[idx]+=delta;
   escs[idx].writeMicroseconds(esc_ms[idx]);
 }
+#define FL 0
+#define FR 1
+#define RR 2
+#define RL 3
 int Yaw(int delta){
-  changeMotorPulse(0, delta);
-  changeMotorPulse(2, delta);
-  changeMotorPulse(1, -delta);
-  changeMotorPulse(3, -delta);
+  changeMotorPulse(FL, delta);
+  changeMotorPulse(RR, delta);
+  changeMotorPulse(FR, -delta);
+  changeMotorPulse(RL, -delta);
 }
 int Pitch(int delta){
-  changeMotorPulse(0, delta);
-  changeMotorPulse(1, delta);
-  changeMotorPulse(2, -delta);
-  changeMotorPulse(3, -delta);
+  changeMotorPulse(FL, delta);
+  changeMotorPulse(FR, delta);
+  changeMotorPulse(RR, -delta);
+  changeMotorPulse(RL, -delta);
 }
 int Roll(int delta){
-  changeMotorPulse(0, delta);
-  changeMotorPulse(3, delta);
-  changeMotorPulse(1, -delta);
-  changeMotorPulse(2, -delta);
+  changeMotorPulse(FL, delta);
+  changeMotorPulse(RL, delta);
+  changeMotorPulse(FR, -delta);
+  changeMotorPulse(RR, -delta);
 }
 
 const int WHO_AM_I = 0x73;
