@@ -23,12 +23,6 @@ const int maxPulseRate = 1800;
 Servo escs[4];
 const int esc_pins[4] = {TEN,NIN,FIV,ELE};
 int esc_ms[4] = {minPulseRate,minPulseRate,minPulseRate,minPulseRate};
-// YC -> 1,3 (+) 2,4 (-)
-// YA -> 2,4 (+) 1,3 (-)
-// PC -> 1,2 (+) 3,4 (-)
-// PA -> 1,2 (-) 3,4 (+)
-// RC -> 1,4 (+) 2,3 (-)
-// RA -> 1,4 (-) 2,3 (+)
 void changeMotorPulse(int idx,int delta){
   esc_ms[idx]+=delta;
   escs[idx].writeMicroseconds(esc_ms[idx]);
@@ -55,12 +49,10 @@ int Roll(int delta){
   changeMotorPulse(FR, -delta);
   changeMotorPulse(RR, -delta);
 }
-
 const int WHO_AM_I = 0x73;
 const int numSensorDataSize = 10;
 const long BT_RATE = 115200;
 const int  CMD_LEN = 10;
-
 //////////////////////////////////////////////////////////////////////////////////
 SoftwareSerial BLE_Serial(2, 3); // BLE's RX, BLE's TXD
 //#define MPU_6050
@@ -72,13 +64,13 @@ SoftwareSerial BLE_Serial(2, 3); // BLE's RX, BLE's TXD
   #include "MPU6050.h"
   MPU6050 myIMU;
 #endif
-int current_speed,i;
+int current_speed,i,current_action;
 //////////////////////////////////////////////////////////////////////////////////
 #define RESTRICT_PITCH // Comment out to restrict roll to ±90deg instead - please read: http://www.freescale.com/files/sensors/doc/app_note/AN3461.pdf
 Kalman kalmanX; // Create the Kalman instances
 Kalman kalmanY;
 double gyroXangle, gyroYangle; // Angle calculate using the gyro only
-double compAngleX, compAngleY; // Calculated angle using a complementary filter
+//double compAngleX, compAngleY; // Calculated angle using a complementary filter
 double kalAngleX, kalAngleY; // Calculated angle using a Kalman filter
 uint32_t timer;
 double delta;
@@ -106,9 +98,14 @@ void loop() {
   //computeKalman();
   //printKalman();
   //printMPU();
-  changeAllSpeed(current_speed);
+  do_this(current_action);
   printSpeeds();
   delay(200);
+}
+void do_this(int action){
+  if(action == ACT_SS){
+    Serial.print(" ACT_SS ");
+  }
 }
 void readCmd(){
   byte byte_count=BLE_Serial.available();
@@ -122,7 +119,7 @@ void readCmd(){
       current_speed=cmd.toInt();
       //Serial.println("set avg speed to: "+cmd+" avg="+String(avg_speed));
       if(current_speed>1000){
-        changeAllSpeed(current_speed);
+        //changeAllSpeed(current_speed);
       }
     }
   }
@@ -276,8 +273,8 @@ void initKalman(){
   kalmanY.setAngle(myIMU.pitch);
   gyroXangle = myIMU.roll;
   gyroYangle = myIMU.pitch;
-  compAngleX = myIMU.roll;
-  compAngleY = myIMU.pitch;
+  //compAngleX = myIMU.roll;
+  //compAngleY = myIMU.pitch;
   timer = micros();
 }
 
@@ -291,7 +288,7 @@ void computeKalman(){
   // This fixes the transition problem when the accelerometer angle jumps between -180 and 180 degrees
   if ((myIMU.roll < -90 && kalAngleX > 90) || (myIMU.roll > 90 && kalAngleX < -90)) {
     kalmanX.setAngle(myIMU.roll);
-    compAngleX = myIMU.roll;
+    //compAngleX = myIMU.roll;
     kalAngleX  = myIMU.roll;
     gyroXangle = myIMU.roll;
   } else {
@@ -304,7 +301,7 @@ void computeKalman(){
   // This fixes the transition problem when the accelerometer angle jumps between -180 and 180 degrees
   if ((myIMU.pitch < -90 && kalAngleY > 90) || (myIMU.pitch > 90 && kalAngleY < -90)) {
     kalmanY.setAngle(myIMU.pitch);
-    compAngleY = myIMU.pitch;
+    //compAngleY = myIMU.pitch;
     kalAngleY = myIMU.pitch;
     gyroYangle = myIMU.pitch;
   } else {
@@ -320,8 +317,8 @@ void computeKalman(){
   //gyroXangle += kalmanX.getRate() * delta; // Calculate gyro angle using the unbiased rate
   //gyroYangle += kalmanY.getRate() * delta;
 
-  compAngleX = 0.93 * (compAngleX + gyroXrate * delta) + 0.07 * myIMU.roll; // Calculate the angle using a Complimentary filter
-  compAngleY = 0.93 * (compAngleY + gyroYrate * delta) + 0.07 * myIMU.pitch;
+  //compAngleX = 0.93 * (compAngleX + gyroXrate * delta) + 0.07 * myIMU.roll; // Calculate the angle using a Complimentary filter
+  //compAngleY = 0.93 * (compAngleY + gyroYrate * delta) + 0.07 * myIMU.pitch;
 
   // Reset the gyro angle when it has drifted too much
   if (gyroXangle < -180 || gyroXangle > 180)
