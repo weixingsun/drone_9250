@@ -5,19 +5,19 @@
 //String toStr(int i) {return String(i);}
 //////////////////////////////////////////////////////////////////////////////////
 
-int ACT_SS = 0;  //no change
-int ACT_YC = 1;  //yaw clockwise
-int ACT_YA = 2;  //yaw anti-clockwise
-int ACT_PC = 3;  //pitch clockwise
-int ACT_PA = 4;  //pitch anti-clockwise
-int ACT_RC = 5;  //roll clockwise
-int ACT_RA = 6;  //roll anti-clockwise
-int ACT_UP = 7;  //take-off
-int ACT_DN = 8;  //land
-int TEN = 10;   //1  //FL
-int NIN = 9;    //2  //FR
-int FIV = 5;    //3  //RR
-int ELE = 11;   //4  //RL
+const int ACT_SS = 0;  //no change
+const int ACT_YC = 1;  //yaw clockwise
+const int ACT_YA = 2;  //yaw anti-clockwise
+const int ACT_PC = 3;  //pitch clockwise
+const int ACT_PA = 4;  //pitch anti-clockwise
+const int ACT_RC = 5;  //roll clockwise
+const int ACT_RA = 6;  //roll anti-clockwise
+const int ACT_UP = 7;  //take-off
+const int ACT_DN = 8;  //land
+const int TEN = 10;   //1  //FL
+const int NIN = 9;    //2  //FR
+const int FIV = 5;    //3  //RR
+const int ELE = 11;   //4  //RL
 const int minPulseRate = 1000;
 const int maxPulseRate = 1800;
 Servo escs[4];
@@ -37,13 +37,13 @@ int Yaw(int delta){
   changeMotorPulse(FR, -delta);
   changeMotorPulse(RL, -delta);
 }
-int Pitch(int delta){
+int Pitch(int delta){   //pitch=10  -> go down
   changeMotorPulse(FL, delta);
   changeMotorPulse(FR, delta);
   changeMotorPulse(RR, -delta);
   changeMotorPulse(RL, -delta);
 }
-int Roll(int delta){
+int Roll(int delta){    //roll=10   -> go right
   changeMotorPulse(FL, delta);
   changeMotorPulse(RL, delta);
   changeMotorPulse(FR, -delta);
@@ -64,7 +64,7 @@ SoftwareSerial BLE_Serial(2, 3); // BLE's RX, BLE's TXD
   #include "MPU6050.h"
   MPU6050 myIMU;
 #endif
-int current_speed,i,current_action;
+int current_speed,i,current_action=ACT_SS;
 //////////////////////////////////////////////////////////////////////////////////
 #define RESTRICT_PITCH // Comment out to restrict roll to ±90deg instead - please read: http://www.freescale.com/files/sensors/doc/app_note/AN3461.pdf
 Kalman kalmanX; // Create the Kalman instances
@@ -95,16 +95,21 @@ void loop() {
   //if (myIMU.readByte(MPU9250_ADDRESS, INT_STATUS) & 0x01) {  //MPU6050_ADDRESS
   calcIMU();
   //}
-  //computeKalman();
-  //printKalman();
+  computeKalman();
   //printMPU();
   do_this(current_action);
-  printSpeeds();
+  printAll();
   delay(200);
 }
 void do_this(int action){
-  if(action == ACT_SS){
-    Serial.print(" ACT_SS ");
+  switch(action) {
+    case ACT_SS: break;
+    case ACT_YC: Serial.print(" ACT_YC "); break;
+    case ACT_YA: Serial.print(" ACT_YA "); break;
+    case ACT_PC: Serial.print(" ACT_PC "); break;//pitch=10  -> go down
+    case ACT_PA: Serial.print(" ACT_PA "); break;//pitch=-10 -> go up
+    case ACT_RC: Serial.print(" ACT_RC "); break;//roll=10   -> go right
+    case ACT_RA: Serial.print(" ACT_RA "); break;//roll=-10  -> go left
   }
 }
 void readCmd(){
@@ -327,18 +332,26 @@ void computeKalman(){
     gyroYangle = kalAngleY;
 
 }
-/*void printKalman(){
+void printAll(){
+  myIMU.dspDelt_t = millis() - myIMU.count;
+  if (myIMU.dspDelt_t > 500) {  //slow down printing rate
+    printKalman();
+    printSpeeds();
+    myIMU.count = millis();
+  }
+}
+void printKalman(){
   Serial.print("roll="); Serial.print(myIMU.roll); Serial.print("\t");
   Serial.print("  gx=");Serial.print(myIMU.gx); Serial.print("\t");
   Serial.print("gxagl=");Serial.print(gyroXangle); Serial.print("\t");
-  Serial.print("caglx=");Serial.print(compAngleX); Serial.print("\t");
+  //Serial.print("caglx=");Serial.print(compAngleX); Serial.print("\t");
   Serial.print("kaglx=");Serial.print(kalAngleX); Serial.print("\t");
   Serial.print("pitch=");Serial.print(myIMU.pitch); Serial.print("\t");
   Serial.print("  gy=");Serial.print(myIMU.gy); Serial.print("\t");
   Serial.print("gyagl=");Serial.print(gyroYangle); Serial.print("\t");
-  Serial.print("cagly=");Serial.print(compAngleY); Serial.print("\t");
+  //Serial.print("cagly=");Serial.print(compAngleY); Serial.print("\t");
   Serial.print("kagly=");Serial.print(kalAngleY); Serial.println("\t");
-}
+}/*
 void printMPU(){
   myIMU.dspDelt_t = millis() - myIMU.count;
   if (myIMU.dspDelt_t > 1000) {  //slow down printing rate
@@ -355,8 +368,6 @@ void printMPU(){
 }*/
 
 void printSpeeds(){
-  myIMU.dspDelt_t = millis() - myIMU.count;
-  if (myIMU.dspDelt_t > 500) {  //slow down printing rate
     int tmp_speed=escs[0].readMicroseconds(); //FIV
     Serial.print(" FIV= ");
     Serial.print(tmp_speed);
@@ -370,7 +381,5 @@ void printSpeeds(){
      tmp_speed=escs[3].readMicroseconds(); //ELE
     Serial.print(tmp_speed);
     Serial.println();
-    myIMU.count = millis();
-  }
 }
 
