@@ -18,19 +18,40 @@ const int TEN = 10;   //1  //FL
 const int NIN = 9;    //2  //FR
 const int FIV = 5;    //3  //RR
 const int ELE = 11;   //4  //RL
+const int initPulseRate = 1200;
 const int minPulseRate = 1000;
 const int maxPulseRate = 1800;
 Servo escs[4];
+
+#define FL 0
+#define FR 1
+#define RR 2
+#define RL 3
 const int esc_pins[4] = {TEN,NIN,FIV,ELE};
 int esc_ms[4] = {minPulseRate,minPulseRate,minPulseRate,minPulseRate};
 void changeMotorPulse(int idx,int delta){
   esc_ms[idx]+=delta;
   escs[idx].writeMicroseconds(esc_ms[idx]);
 }
-#define FL 0
-#define FR 1
-#define RR 2
-#define RL 3
+int changeASpeed(int id, int throttle){
+  if (throttle > maxPulseRate) throttle = maxPulseRate;
+  escs[id].writeMicroseconds(throttle);
+}
+int changeAllSpeed(){
+    changeASpeed(FL, esc_ms[FL]);
+    changeASpeed(FR, esc_ms[FR]);
+    changeASpeed(RL, esc_ms[RL]);
+    changeASpeed(RR, esc_ms[RR]);
+    
+    //int esc_1 = throttle - pid_output_pitch + pid_output_roll - pid_output_yaw; //Calculate the pulse for esc 1 (front-right - CCW)
+    //escs[3].writeMicroseconds(throttle);
+    //int esc_2 = throttle + pid_output_pitch + pid_output_roll + pid_output_yaw; //Calculate the pulse for esc 2 (rear-right - CW)
+    //escs[2].writeMicroseconds(throttle);
+    //int esc_3 = throttle + pid_output_pitch - pid_output_roll - pid_output_yaw; //Calculate the pulse for esc 3 (rear-left - CCW)
+    //escs[1].writeMicroseconds(throttle);
+    //int esc_4 = throttle - pid_output_pitch - pid_output_roll + pid_output_yaw; //Calculate the pulse for esc 4 (front-left - CW)
+    //escs[0].writeMicroseconds(throttle);
+}
 int Yaw(int delta){
   changeMotorPulse(FL, delta);
   changeMotorPulse(RR, delta);
@@ -84,11 +105,10 @@ void setup() {
   BLE_Serial.begin(BT_RATE);
   initEscs();
   initMPU();
-  //if (myIMU.readByte(MPU9250_ADDRESS, INT_STATUS) & 0x01) {  //MPU6050_ADDRESS
+  //if (myIMU.readByte(MPU9250_ADDRESS, INT_STATUS) & 0x01) {}  //MPU6050_ADDRESS
   calcIMU();
-  //}
   //initKalman();
-  changeAllSpeed(1000);
+  changeAllSpeed();
 }
 void loop() {
   readCmd();
@@ -123,8 +143,8 @@ void readCmd(){
     if (cmd_end==true){
       current_speed=cmd.toInt();
       //Serial.println("set avg speed to: "+cmd+" avg="+String(avg_speed));
-      if(current_speed>1000){
-        //changeAllSpeed(current_speed);
+      if(current_speed>minPulseRate && current_speed<maxPulseRate){
+        changeAllSpeed();
       }
     }
   }
@@ -132,17 +152,6 @@ void readCmd(){
     cmd="";
     cmd_end=false;
   }
-}
-int changeAllSpeed(int throttle){
-    if (throttle > maxPulseRate) throttle = maxPulseRate;        //We need some room to keep full control at full throttle.
-    //int esc_1 = throttle - pid_output_pitch + pid_output_roll - pid_output_yaw; //Calculate the pulse for esc 1 (front-right - CCW)
-    escs[3].writeMicroseconds(throttle);
-    //int esc_2 = throttle + pid_output_pitch + pid_output_roll + pid_output_yaw; //Calculate the pulse for esc 2 (rear-right - CW)
-    escs[2].writeMicroseconds(throttle);
-    //int esc_3 = throttle + pid_output_pitch - pid_output_roll - pid_output_yaw; //Calculate the pulse for esc 3 (rear-left - CCW)
-    escs[1].writeMicroseconds(throttle);
-    //int esc_4 = throttle - pid_output_pitch - pid_output_roll + pid_output_yaw; //Calculate the pulse for esc 4 (front-left - CW)
-    escs[0].writeMicroseconds(throttle);
 }
 void initMPU(){
 #ifndef MPU_9250
@@ -254,6 +263,10 @@ void initEscs() {
     escs[i].write(0);
   }
   delay(3000);
+  esc_ms[0] = initPulseRate;
+  esc_ms[1] = initPulseRate;
+  esc_ms[2] = initPulseRate;
+  esc_ms[3] = initPulseRate;
 }
 // Ensure the throttle value is between 0 - 180
 int normalizeThrottle(int value) {
